@@ -1,0 +1,5 @@
+{
+  "name": "Aura AI — Premium Productivity Suite",
+  "description": "A powerful AI suite featuring Image Generation, Smart Summarization, Voice Synthesis, and Ad Generation powered by Gemini.",
+  "requestFramePermissions": ["microphone"]
+}

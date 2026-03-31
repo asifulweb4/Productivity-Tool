@@ -1,0 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", sans-serif;
+
+  --color-bg: var(--bg);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-accent: #6c63ff;
+  --color-accent-2: #00d4aa;
+  --color-accent-3: #ff6b6b;
+  --color-accent-4: #f7b731;
+  --color-muted: var(--foreground-muted);
+  --color-border: var(--border);
+}
+
+:root {
+  --bg: #ffffff;
+  --foreground: #0f172a;
+  --foreground-muted: #64748b;
+  --surface: #f8fafc;
+  --surface-2: #f1f5f9;
+  --border: rgba(0, 0, 0, 0.06);
+  --accent-glow: rgba(108, 99, 255, 0.05);
+}
+
+.dark {
+  --bg: #020617;
+  --foreground: #f8fafc;
+  --foreground-muted: #94a3b8;
+  --surface: #0f172a;
+  --surface-2: #1e293b;
+  --border: rgba(255, 255, 255, 0.08);
+  --accent-glow: rgba(99, 102, 241, 0.15);
+}
+
+body {
+  @apply bg-bg font-sans antialiased transition-colors duration-500;
+  color: var(--foreground) !important;
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.dark body {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  @apply font-display tracking-tight;
+}
+
+.grad-text {
+  @apply bg-gradient-to-r from-indigo-500 via-emerald-400 to-amber-400 bg-clip-text text-transparent;
+}
+
+.glass {
+  @apply bg-surface/80 dark:bg-surface/60 backdrop-blur-2xl border border-border;
+}
+
+.card-glow {
+  @apply relative overflow-hidden shadow-sm hover:shadow-xl hover:shadow-accent/5 transition-all duration-300;
+}
+
+.card-glow::before {
+  content: '';
+  @apply absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-accent to-accent-2;
+}
