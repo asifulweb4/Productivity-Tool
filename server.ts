@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3001;
+  const PORT = 3000;
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
@@ -196,20 +196,23 @@ async function startServer() {
         }
       }
 
-      // 3. Final Fallback: Pollinations.ai (Direct URL for reliability)
+      // 3. Final Fallback: Pollinations.ai (Fetch and convert to base64)
       try {
-        console.log("Using Pollinations fallback (Direct URL)...");
+        console.log("Using Pollinations fallback...");
         const fallbackUrl = `https://pollinations.ai/p/${encodeURIComponent(prompt)}?width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
 
+        const pollinationsResponse = await fetch(fallbackUrl);
+        if (!pollinationsResponse.ok) {
+          throw new Error(`Pollinations returned ${pollinationsResponse.status}`);
+        }
+
+        const buffer = await pollinationsResponse.arrayBuffer();
+        const base64 = Buffer.from(new Uint8Array(buffer)).toString("base64");
+        const contentType = pollinationsResponse.headers.get("content-type") || "image/png";
+
         return res.json({
-          url: fallbackUrl,
-          candidates: [{
-            content: {
-              parts: [{
-                text: "Generating via Pollinations..."
-              }]
-            }
-          }]
+          imageBase64: base64,
+          mimeType: contentType.split(';')[0].trim()
         });
       } catch (finalErr: any) {
         console.error("All image generation methods failed:", finalErr.message);
