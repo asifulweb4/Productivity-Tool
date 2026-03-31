@@ -181,6 +181,41 @@ export default function App() {
     showToast('✓ চ্যাট হিস্ট্রি মুছে ফেলা হয়েছে', 'success');
   };
 
+  const reloadApp = () => {
+    // Clear all localStorage
+    localStorage.removeItem('aura-chat-history');
+    localStorage.removeItem('aura-dark-mode');
+
+    // Reset all state
+    setChatMessages([]);
+    setChatInput('');
+    setUploadedImage(null);
+    setVisionPrompt('');
+    setVisionResult(null);
+    setInsightText('');
+    setInsightResult(null);
+    setVoiceText('');
+    setVoiceAudio(null);
+    setAdProduct('');
+    setAdDesc('');
+    setAdResults([]);
+    setAdCampaignImage(null);
+    setLastAdInfo(null);
+    setDocFile(null);
+    setDocQuestion('');
+    setDocResult(null);
+    setCodeText('');
+    setCodeResult(null);
+    setGrammarText('');
+    setGrammarResult(null);
+
+    // Reset dark mode to default
+    setIsDarkMode(true);
+    document.documentElement.classList.add('dark');
+
+    showToast('✓ অ্যাপ রিসেট হয়েছে', 'success');
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -640,6 +675,16 @@ export default function App() {
           >
             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
+          <button
+            onClick={reloadApp}
+            className="p-2 rounded-lg bg-surface-2 border border-border text-foreground/70 hover:text-foreground hover:border-red-500 hover:text-red-500 transition-all"
+            title="রিসেট করুন"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+          </button>
           <a href="#features" className="text-sm font-medium text-foreground/70 hover:text-foreground transition-colors">ফিচার</a>
           <a href="#pricing" className="text-sm font-medium text-foreground/70 hover:text-foreground transition-colors">মূল্য</a>
           <button className="px-5 py-2 rounded-lg border border-border text-sm font-medium text-foreground/70 hover:border-accent hover:text-accent transition-all">লগইন</button>
@@ -652,6 +697,16 @@ export default function App() {
             className="p-2 rounded-lg bg-surface-2 border border-border text-foreground/70"
           >
             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button
+            onClick={reloadApp}
+            className="p-2 rounded-lg bg-surface-2 border border-border text-foreground/70 hover:border-red-500 hover:text-red-500 transition-all"
+            title="রিসেট করুন"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
           </button>
           <button className="text-foreground/70" onClick={() => setIsMenuOpen(!isMenuOpen)}>
             {isMenuOpen ? <X /> : <Menu />}

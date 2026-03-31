@@ -13,34 +13,51 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = 3001;
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
 
+  // Diagnostic Route
   app.get("/api/debug-env", (req, res) => {
     res.json({
       GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
       OPENROUTER_API_KEY: !!process.env.OPENROUTER_API_KEY,
-      HUGGINGFACE_API_KEY: !!process.env.HUGGINGFACE_API_KEY,
       API_KEY: !!process.env.API_KEY,
       NODE_ENV: process.env.NODE_ENV
     });
   });
 
+  // API Routes
   app.post("/api/chat", async (req, res) => {
     const { messages, model = "google/gemini-2.0-flash-001" } = req.body;
     const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "OpenRouter API Key is not configured." });
+
+    if (!apiKey) {
+      console.error("Missing OPENROUTER_API_KEY in environment");
+      return res.status(500).json({ error: "OpenRouter API Key is not configured in the backend. Please add OPENROUTER_API_KEY to your environment variables." });
+    }
 
     try {
+      // Convert Gemini parts format to OpenAI messages format if needed
+      // For now, assuming standard OpenAI messages format from frontend
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages }),
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+        }),
       });
+
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message || "OpenRouter API error");
+      if (!response.ok) {
+        throw new Error(data.error?.message || "OpenRouter API error");
+      }
+
       res.json(data);
     } catch (error: any) {
       console.error("Chat Proxy Error:", error.message);
@@ -51,22 +68,36 @@ async function startServer() {
   app.post("/api/tts", async (req, res) => {
     const { text } = req.body;
     const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "Gemini API Key is not configured." });
+
+    if (!apiKey) {
+      console.error("Missing Gemini API Key in environment");
+      return res.status(500).json({ error: "Gemini API Key is not configured in the backend. Please add GEMINI_API_KEY to your environment variables." });
+    }
 
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           contents: [{ parts: [{ text: `Say this in Bengali: ${text}` }] }],
           generationConfig: {
             responseModalities: ["AUDIO"],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: 'Kore' },
+              },
+            },
           }
         }),
       });
+
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message || "Gemini TTS API error");
+      if (!response.ok) {
+        throw new Error(data.error?.message || "Gemini TTS API error");
+      }
+
       res.json(data);
     } catch (error: any) {
       console.error("TTS Proxy Error:", error.message);
@@ -74,138 +105,244 @@ async function startServer() {
     }
   });
 
-  // ✅ FULLY FIXED Image Generation
   app.post("/api/generate-image", async (req, res) => {
-    const { prompt } = req.body;
-    const hfKey = process.env.HUGGINGFACE_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    try {
+      const { prompt } = req.body;
+      if (!prompt) {
+        return res.status(400).json({ error: "Prompt is required" });
+      }
 
-    // Helper: try a HuggingFace model, return base64 or null
-    const tryHuggingFace = async (modelId: string): Promise<{ base64: string; mimeType: string } | null> => {
-      try {
-        console.log(`Trying HuggingFace: ${modelId}`);
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 40000);
+      const hfKey = process.env.HUGGINGFACE_API_KEY;
+      const geminiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-        const r = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${hfKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ inputs: prompt, options: { wait_for_model: true } }),
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
+      console.log(`Generating image for prompt: "${prompt.substring(0, 50)}..."`);
 
-        if (!r.ok) { console.warn(`${modelId} HTTP ${r.status}`); return null; }
+      // 1. Try Hugging Face First
+      if (hfKey) {
+        try {
+          console.log("Attempting Hugging Face (FLUX.1-schnell)...");
+          const hfResponse = await fetch(
+            "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
+            {
+              headers: {
+                Authorization: `Bearer ${hfKey}`,
+                "Content-Type": "application/json",
+              },
+              method: "POST",
+              body: JSON.stringify({ inputs: prompt }),
+            }
+          );
 
-        const contentType = r.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          const json = await r.json();
-          console.warn(`${modelId} returned JSON:`, JSON.stringify(json).slice(0, 120));
-          return null;
+          if (hfResponse.ok) {
+            const contentType = hfResponse.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+              const errorData = await hfResponse.json();
+              console.warn("Hugging Face returned JSON instead of image:", errorData);
+              throw new Error("Model is still loading or busy.");
+            }
+
+            const buffer = await hfResponse.arrayBuffer();
+            const base64 = Buffer.from(new Uint8Array(buffer)).toString("base64");
+
+            // Clean content type (remove charset etc)
+            const cleanMimeType = (contentType || "image/webp").split(';')[0].trim();
+
+            return res.json({
+              candidates: [{
+                content: {
+                  parts: [{
+                    inlineData: {
+                      mimeType: cleanMimeType,
+                      data: base64
+                    }
+                  }]
+                }
+              }]
+            });
+          } else {
+            const errorText = await hfResponse.text();
+            console.error("Hugging Face API error:", hfResponse.status, errorText);
+          }
+        } catch (hfErr: any) {
+          console.error("Hugging Face Error:", hfErr.message);
         }
-
-        const buffer = await r.arrayBuffer();
-        if (buffer.byteLength < 1000) { console.warn(`${modelId} buffer too small`); return null; }
-
-        const base64 = Buffer.from(new Uint8Array(buffer)).toString("base64");
-        const mimeType = contentType.split(";")[0].trim() || "image/jpeg";
-        console.log(`✅ ${modelId} success! (${buffer.byteLength} bytes)`);
-        return { base64, mimeType };
-      } catch (e: any) {
-        console.error(`${modelId} error:`, e.message);
-        return null;
       }
-    };
 
-    // Helper: fetch any URL as base64
-    const fetchUrlAsBase64 = async (url: string, timeoutMs = 55000): Promise<{ base64: string; mimeType: string } | null> => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        console.log("Fetching URL:", url.slice(0, 80));
-        const r = await fetch(url, { signal: controller.signal });
-        clearTimeout(timer);
-        if (!r.ok) return null;
-        const contentType = r.headers.get("content-type") || "image/png";
-        if (contentType.includes("text/html")) { console.warn("Got HTML instead of image"); return null; }
-        const buffer = await r.arrayBuffer();
-        if (buffer.byteLength < 1000) { console.warn("Buffer too small:", buffer.byteLength); return null; }
-        const base64 = Buffer.from(new Uint8Array(buffer)).toString("base64");
-        const mimeType = contentType.split(";")[0].trim();
-        console.log(`✅ URL fetch success! (${buffer.byteLength} bytes)`);
-        return { base64, mimeType };
-      } catch (e: any) {
-        clearTimeout(timer);
-        console.error("URL fetch error:", e.message);
-        return null;
-      }
-    };
-
-    // ── Step 1: HuggingFace (multiple models) ──
-    if (hfKey) {
-      const models = [
-        "black-forest-labs/FLUX.1-schnell",
-        "stabilityai/stable-diffusion-xl-base-1.0",
-        "runwayml/stable-diffusion-v1-5",
-        "stabilityai/stable-diffusion-2-1",
-      ];
-      for (const model of models) {
-        const result = await tryHuggingFace(model);
-        if (result) return res.json({ imageBase64: result.base64, mimeType: result.mimeType });
-      }
-    }
-
-    // ── Step 2: Gemini ──
-    if (geminiKey) {
-      try {
-        console.log("Trying Gemini image generation...");
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${geminiKey}`,
-          {
+      // 2. Fallback to Gemini
+      if (geminiKey) {
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiKey}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+            },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
             }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            const hasImage = data.candidates?.[0]?.content?.parts?.some((p: any) => p.inlineData);
+            if (hasImage) return res.json(data);
+            console.warn("Gemini returned no image:", JSON.stringify(data).substring(0, 200));
+          } else {
+            console.error("Gemini API error:", response.status, JSON.stringify(data).substring(0, 200));
           }
-        );
-        const data = await response.json();
-        if (response.ok && data.candidates?.[0]?.content?.parts) {
-          for (const part of data.candidates[0].content.parts) {
-            if (part.inlineData?.data && part.inlineData.data.length > 100) {
-              console.log("✅ Gemini image success!");
-              return res.json({ imageBase64: part.inlineData.data, mimeType: part.inlineData.mimeType || "image/png" });
-            }
-          }
+          console.warn("Gemini failed or returned no image, trying Pollinations...");
+        } catch (geminiErr: any) {
+          console.error("Gemini Error:", geminiErr.message);
         }
-        console.warn("Gemini returned no image. Response:", JSON.stringify(data).slice(0, 200));
-      } catch (err: any) {
-        console.error("Gemini error:", err.message);
       }
-    }
 
-    // ── Step 3: Pollinations — server-side fetch, return base64 ──
-    try {
-      console.log("Trying Pollinations (server-side)...");
-      const seed = Math.floor(Math.random() * 1000000);
-      const urls = [
-        `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`,
-        `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&seed=${seed}&model=turbo`,
-      ];
-      for (const url of urls) {
-        const result = await fetchUrlAsBase64(url, 55000);
-        if (result) return res.json({ imageBase64: result.base64, mimeType: result.mimeType });
+      // 3. Final Fallback: Pollinations.ai (Direct URL for reliability)
+      try {
+        console.log("Using Pollinations fallback (Direct URL)...");
+        const fallbackUrl = `https://pollinations.ai/p/${encodeURIComponent(prompt)}?width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
+
+        return res.json({
+          url: fallbackUrl,
+          candidates: [{
+            content: {
+              parts: [{
+                text: "Generating via Pollinations..."
+              }]
+            }
+          }]
+        });
+      } catch (finalErr: any) {
+        console.error("All image generation methods failed:", finalErr.message);
+        res.status(500).json({ error: "All image generation methods failed. Please try again later." });
       }
-    } catch (err: any) {
-      console.error("Pollinations error:", err.message);
+    } catch (error: any) {
+      console.error("Image generation error:", error.message);
+      res.status(500).json({ error: error.message });
     }
-
-    console.error("❌ All image generation methods failed");
-    res.status(500).json({ error: "ইমেজ তৈরি করতে সমস্যা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।" });
   });
 
-  // Vite middleware
+  // Allowed domains for image proxying (SSRF protection)
+  const ALLOWED_IMAGE_DOMAINS = [
+    'pollinations.ai',
+    'image.pollinations.ai',
+  ];
+
+  app.get("/api/proxy-image", async (req, res) => {
+    const imageUrl = req.query.url as string;
+    if (!imageUrl) {
+      return res.status(400).send("URL is required");
+    }
+
+    // Validate URL format
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(imageUrl);
+    } catch {
+      return res.status(400).send("Invalid URL format");
+    }
+
+    // Check allowed domains
+    const isAllowedDomain = ALLOWED_IMAGE_DOMAINS.some(domain =>
+      parsedUrl.hostname === domain || parsedUrl.hostname.endsWith(`.${domain}`)
+    );
+    if (!isAllowedDomain) {
+      return res.status(403).send("Domain not allowed");
+    }
+
+    // Block private/internal IP addresses (SSRF protection)
+    const hostname = parsedUrl.hostname;
+    if (
+      hostname === 'localhost' ||
+      hostname === '0.0.0.0' ||
+      hostname.startsWith('127.') ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('169.254.') ||
+      hostname.startsWith('172.16.') ||
+      hostname.startsWith('172.17.') ||
+      hostname.startsWith('172.18.') ||
+      hostname.startsWith('172.19.') ||
+      hostname.startsWith('172.20.') ||
+      hostname.startsWith('172.21.') ||
+      hostname.startsWith('172.22.') ||
+      hostname.startsWith('172.23.') ||
+      hostname.startsWith('172.24.') ||
+      hostname.startsWith('172.25.') ||
+      hostname.startsWith('172.26.') ||
+      hostname.startsWith('172.27.') ||
+      hostname.startsWith('172.28.') ||
+      hostname.startsWith('172.29.') ||
+      hostname.startsWith('172.30.') ||
+      hostname.startsWith('172.31.')
+    ) {
+      return res.status(403).send("Internal addresses not allowed");
+    }
+
+    let lastError = "";
+
+    const tryFetch = async (url: string, attempt: number = 1): Promise<Response | null> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased to 60s timeout per attempt
+
+      try {
+        console.log(`Attempt ${attempt} for: ${url}`);
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (response.ok) return response;
+
+        console.error(`Attempt ${attempt} failed: ${response.status} ${response.statusText}`);
+        lastError = `${response.status} ${response.statusText}`;
+        return null;
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        console.error(`Attempt ${attempt} error:`, err.message);
+        lastError = err.message;
+        return null;
+      }
+    };
+
+    try {
+      let response = await tryFetch(imageUrl);
+
+      // Fallback 1: Retry same URL after a short delay if it failed with 500
+      if (!response) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        response = await tryFetch(imageUrl, 2);
+      }
+
+      // Fallback 2: Try without model=flux if it was present
+      if (!response && imageUrl.includes("model=flux")) {
+        const fallbackUrl = imageUrl.replace("&model=flux", "&model=turbo");
+        console.log("Switching to turbo model...");
+        response = await tryFetch(fallbackUrl, 3);
+      }
+
+      // Fallback 3: Try the most basic endpoint
+      if (!response) {
+        const basicUrl = imageUrl.split('?')[0] + "?width=1024&height=1024&nologo=true";
+        console.log("Trying basic endpoint...");
+        response = await tryFetch(basicUrl, 4);
+      }
+
+      if (!response) {
+        throw new Error(`All attempts failed. Last error: ${lastError}`);
+      }
+
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      res.setHeader("Content-Type", response.headers.get("Content-Type") || "image/png");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.send(buffer);
+    } catch (error: any) {
+      console.error("Final Proxy error:", error.message);
+      res.status(500).send(`Error fetching image: ${error.message}`);
+    }
+  });
+
+  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -219,6 +356,12 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Global Error Handler:", err);
+    res.status(500).json({ error: err.message || "Internal Server Error" });
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
