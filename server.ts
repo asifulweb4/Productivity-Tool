@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = 3001;
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
@@ -351,7 +351,13 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
-    app.use(vite.middlewares);
+    // Skip API routes for Vite middleware
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+      vite.middlewares(req, res, next);
+    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
